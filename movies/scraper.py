@@ -16,6 +16,15 @@ from multiprocessing import Pool
 import multiprocessing
 import re
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('scraper.log'),
+        logging.StreamHandler()
+    ]
+)
+
 logger = logging.getLogger('imdb_scraper')
 
 class IMDbScraper:
@@ -146,7 +155,7 @@ class IMDbScraper:
             logger.error(f"Failed to scrape movie page {movie_url}: {e}")
             return [], []
 
-    def parse_movie_item(self, item_html, idx):
+    def parse_movie_item(self, item_html, idx, existing_movies):
         """Parse a single movie item from HTML string."""
         try:
             soup = BeautifulSoup(item_html, 'html.parser')
@@ -157,9 +166,10 @@ class IMDbScraper:
                 soup.select_one('a[href*="/title/tt"]')
             )
             movie_data['title'] = title_tag.text.strip() if title_tag else None
+            if not movie_data['title']:
+                self.stdout(f"Item {idx} - Skipped: No title found")
+                return None
             self.stdout(f"Item {idx} - Title: {movie_data['title']}")
-            title_href = title_tag.get('href') if title_tag else None
-            self.stdout(f"Item {idx} - Title href: {title_href}")
             
             year_tag = soup.select_one('span[class*="metadata-item"]') or soup.select_one('span[class*="lister-item-year"]')
             if year_tag:
@@ -168,6 +178,14 @@ class IMDbScraper:
             else:
                 movie_data['release_year'] = None
             self.stdout(f"Item {idx} - Year: {movie_data['release_year']}")
+            
+            # Skip if title and release_year match an existing movie
+            if (movie_data['title'], movie_data['release_year']) in existing_movies:
+                self.stdout(f"Item {idx} - Skipped: Movie '{movie_data['title']}' ({movie_data['release_year']}) already in database")
+                return None
+
+            title_href = title_tag.get('href') if title_tag else None
+            self.stdout(f"Item {idx} - Title href: {title_href}")
             
             rating_tag = (
                 soup.select_one('span[aria-label*="IMDb rating"]') or
@@ -264,11 +282,16 @@ class IMDbScraper:
             return None
 
     def parse_movie_data(self, html):
-        """Parse all movie items from HTML in parallel."""
+        """Parse all movie items from HTML in parallel, skipping duplicates."""
         if not html:
             self.stdout("No HTML content to parse")
             return []
         try:
+            from movies.models import Movie
+            # Query existing (title, release_year) pairs from database
+            existing_movies = set(Movie.objects.values_list('title', 'release_year'))
+            self.stdout(f"Found {len(existing_movies)} existing movies in database")
+
             soup = BeautifulSoup(html, 'html.parser')
             movie_items = soup.select('div[class*="ipc-metadata-list-summary-item__c"]') or soup.select('div[class*="lister-item-content"]')
             self.stdout(f"Found {len(movie_items)} movie items on page")
@@ -279,7 +302,7 @@ class IMDbScraper:
             with Pool(processes=processes) as pool:
                 results = pool.starmap(
                     self.parse_movie_item,
-                    [(str(item), idx) for idx, item in enumerate(movie_items, 1)]
+                    [(str(item), idx, existing_movies) for idx, item in enumerate(movie_items, 1)]
                 )
             movies = [result for result in results if result is not None]
             
