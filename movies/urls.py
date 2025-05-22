@@ -1,14 +1,3 @@
-# from django.urls import path, include
-# from rest_framework.routers import DefaultRouter
-# from .views import *
-
-# router = DefaultRouter()
-# router.register(r'movies', MovieViewSet)
-
-# urlpatterns = [
-#     path('', include(router.urls)),
-#     path('scrape/', scrape_movies_view, name='scrape-movies'),
-# ]
 from django.urls import path
 from . import views
 

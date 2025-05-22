@@ -53,7 +53,7 @@ class IMDbScraper:
                 params["genres"] = self.genre
             if self.keyword:
                 params["keywords"] = self.keyword
-            url = f"{self.base_url}?{'&'.join(f'{k}={v}' for k, v in params.items())}"
+            url = f"{self.base_url}?{'&'.join(f'{k}={v}' for k, v in params.items())}" #creating the url along with genre and/or keywords
             self.stdout(f"Fetching page {page_num} with URL: {url}")
             driver.get(url)
             time.sleep(2)
@@ -62,6 +62,7 @@ class IMDbScraper:
                 retries = 3
                 for attempt in range(retries):
                     try:
+                        #searching for the load 50 more button on the IMDB page given tries are 3
                         load_more_button = WebDriverWait(driver, 10).until(
                             EC.element_to_be_clickable((By.CSS_SELECTOR, 'button.ipc-see-more__button'))
                         )
@@ -93,7 +94,7 @@ class IMDbScraper:
             self.stdout(f"Page {page_num} content length: {len(html) if html else 0}")
             if html and isinstance(html, str):
                 with open(f"page_{page_num}.html", "w", encoding="utf-8") as f:
-                    f.write(html)
+                    f.write(html) #writing the html page to local to be used
             else:
                 self.stdout(f"Skipping file write for page {page_num}: HTML is None or not a string")
             return html
@@ -145,6 +146,7 @@ class IMDbScraper:
             return [], []
 
     def parse_movie_data(self, html):
+        """Parsing to all the HTML pages stored and retrieving required details"""
         if not html:
             self.stdout("No HTML content to parse")
             return []
@@ -244,7 +246,7 @@ class IMDbScraper:
                         if not directors and not cast and title_tag and title_tag.get('href'):
                             self.stdout(f"Item {idx} - Triggering movie page scrape due to empty directors/cast")
                             movie_url = f"https://www.imdb.com{title_tag['href']}"
-                            directors, cast = self.scrape_movie_page(movie_url, driver)
+                            directors, cast = self.scrape_movie_page(movie_url, driver) #as the directors and cast info is not present on main page we need to go into each movie
                             movie_data['directors'] = directors
                             movie_data['cast'] = cast
 
@@ -275,6 +277,7 @@ class IMDbScraper:
             return []
 
     def save_to_db(self, movies):
+        """Saving the scraped data to db in structured format"""
         from django.db import transaction
         from movies.models import Movie
 
@@ -312,6 +315,7 @@ class IMDbScraper:
         return saved_count, skipped_count
 
     def scrape(self):
+        """Main scrape function, it scrapes the data store it in db and return the total number of saved movies in the current scrape"""
         total_saved = 0
         try:
             django.setup()

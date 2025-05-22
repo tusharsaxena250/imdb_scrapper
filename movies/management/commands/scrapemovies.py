@@ -1,19 +1,3 @@
-# from django.core.management.base import BaseCommand
-# from movies.scraper import IMDbScraper
-
-# class Command(BaseCommand):
-#     help = 'Scrape IMDb for movies by genre and save to database'
-
-#     def add_arguments(self, parser):
-#         parser.add_argument('--genre', type=str, default='comedy', help='Genre to scrape (e.g., comedy, action)')
-#         parser.add_argument('--max-pages', type=int, default=2, help='Maximum number of pages to scrape')
-
-#     def handle(self, *args, **options):
-#         genre = options['genre']
-#         max_pages = options['max_pages']
-#         scraper = IMDbScraper(genre=genre, max_pages=max_pages, stdout=self.stdout.write)
-#         scraper.scrape()
-
 import logging
 from logging.handlers import RotatingFileHandler
 import django
@@ -41,7 +25,7 @@ class Command(BaseCommand):
         parser.add_argument('--max-pages', type=int, default=2, help='Maximum number of pages to scrape')
 
     def handle(self, *args, **options):
-        django.setup()  # Ensure Django is initialized
+        django.setup()
         genre = options['genre']
         keyword = options['keyword']
         max_pages = options['max_pages']
