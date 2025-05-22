@@ -1,0 +1,8 @@
+Django
+djangorestframework
+beautifulsoup4
+requests
+selenium==4.17.2
+webdriver-manager
+retrying
+django-filter
