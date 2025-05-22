@@ -35,8 +35,8 @@ The scraper supports pagination (50 results per page), genre/keyword filtering, 
 
 1. **Clone the Repository**:
    ```bash
-   git clone <repository-url>
-   cd imdb-scraper
+   git clone https://github.com/tusharsaxena250/imdb_scrapper.git
+   cd imdb_scrapper
    ```
 
 2. **Create a Virtual Environment**:
