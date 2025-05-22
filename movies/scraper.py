@@ -13,6 +13,7 @@ from selenium.common.exceptions import TimeoutException, ElementClickIntercepted
 from webdriver_manager.chrome import ChromeDriverManager
 from retrying import retry
 from multiprocessing import Pool
+import multiprocessing
 import re
 
 logger = logging.getLogger('imdb_scraper')
@@ -145,8 +146,125 @@ class IMDbScraper:
             logger.error(f"Failed to scrape movie page {movie_url}: {e}")
             return [], []
 
+    def parse_movie_item(self, item_html, idx):
+        """Parse a single movie item from HTML string."""
+        try:
+            soup = BeautifulSoup(item_html, 'html.parser')
+            movie_data = {}
+            title_tag = (
+                soup.select_one('a[class*="ipc-title-link"]') or
+                soup.select_one('h3 a') or
+                soup.select_one('a[href*="/title/tt"]')
+            )
+            movie_data['title'] = title_tag.text.strip() if title_tag else None
+            self.stdout(f"Item {idx} - Title: {movie_data['title']}")
+            title_href = title_tag.get('href') if title_tag else None
+            self.stdout(f"Item {idx} - Title href: {title_href}")
+            
+            year_tag = soup.select_one('span[class*="metadata-item"]') or soup.select_one('span[class*="lister-item-year"]')
+            if year_tag:
+                year_text = year_tag.text.strip('()')
+                movie_data['release_year'] = int(year_text) if year_text.isdigit() else None
+            else:
+                movie_data['release_year'] = None
+            self.stdout(f"Item {idx} - Year: {movie_data['release_year']}")
+            
+            rating_tag = (
+                soup.select_one('span[aria-label*="IMDb rating"]') or
+                soup.select_one('span[class*="ipc-rating-star"]') or
+                soup.select_one('div[class*="ratings-imdb-rating"] strong') or
+                soup.select_one('div[data-testid*="rating"]')
+            )
+            rating_text = None
+            if rating_tag:
+                rating_text = (
+                    rating_tag.get('data-value') or
+                    rating_tag.get('aria-label', '').split()[-1] if rating_tag.get('aria-label') else
+                    rating_tag.text.strip()
+                )
+            try:
+                movie_data['imdb_rating'] = float(rating_text) if rating_text and rating_text.replace('.', '', 1).isdigit() else None
+                if movie_data['imdb_rating'] is not None and not (0 <= movie_data['imdb_rating'] <= 10):
+                    self.stdout(f"Item {idx} - Invalid rating: {movie_data['imdb_rating']}")
+                    movie_data['imdb_rating'] = None
+                else:
+                    self.stdout(f"Item {idx} - Rating: {movie_data['imdb_rating']}")
+            except ValueError:
+                movie_data['imdb_rating'] = None
+            if not movie_data['imdb_rating']:
+                rating_div = soup.select_one('div[class*="sc-"]') or soup.select_one('div[class*="ratings-"]')
+                rating_html = str(rating_div)[:200] if rating_div else 'No rating div'
+                self.stdout(f"Item {idx} - Rating HTML: {rating_html}")
+
+            plot_tags = soup.select('div[class*="ipc-html-content-inner-div"]') or soup.select('p[class*="text-muted"]')
+            plot_tag = plot_tags[-1] if plot_tags else None
+            movie_data['plot_summary'] = plot_tag.text.strip() if plot_tag else ""
+            self.stdout(f"Item {idx} - Plot: {movie_data['plot_summary'][:50]}...")
+            
+            people_tag = (
+                soup.select_one('div[class*="metadata-list"]') or
+                soup.select_one('p:nth-of-type(3)') or
+                soup.select_one('div[class*="sc-"] div[class*="text-muted"]') or
+                soup.select_one('div[class*="sc-"]') or
+                soup.select_one('div[data-testid*="credits"]') or
+                soup.select_one('div[data-testid*="title-cast"]')
+            )
+            directors = []
+            cast = []
+            if people_tag:
+                text = people_tag.text.strip()
+                self.stdout(f"Item {idx} - People text: {text[:100]}...")
+                director_links = (
+                    people_tag.find_all('a', href=lambda x: x and 'tt_ov_dr' in x) or
+                    soup.select('a[href*="/name/"][href*="tt_ov_dr"]') or
+                    soup.select('a[data-testid*="director"]') or
+                    soup.select('div[data-testid*="title-cast"] a[href*="/name/"]')
+                )
+                directors = [link.text.strip() for link in director_links if link.text.strip()]
+                cast_links = (
+                    people_tag.find_all('a', href=lambda x: x and 'tt_ov_st' in x) or
+                    soup.select('a[href*="/name/"][href*="tt_ov_st"]') or
+                    soup.select('a[data-testid*="cast"]') or
+                    soup.select('div[data-testid*="title-cast"] a[href*="/name/"]')
+                )
+                cast = [link.text.strip() for link in cast_links if link.text.strip()]
+            movie_data['directors'] = directors
+            movie_data['cast'] = cast
+            self.stdout(f"Item {idx} - Directors: {directors}")
+            self.stdout(f"Item {idx} - Cast: {cast}")
+
+            if not directors and not cast and title_tag and title_tag.get('href'):
+                self.stdout(f"Item {idx} - Triggering movie page scrape due to empty directors/cast")
+                movie_url = f"https://www.imdb.com{title_tag['href']}"
+                driver = self.setup_driver()
+                try:
+                    directors, cast = self.scrape_movie_page(movie_url, driver)
+                    movie_data['directors'] = directors
+                    movie_data['cast'] = cast
+                finally:
+                    driver.quit()
+
+            if not directors and not cast:
+                item_html = str(soup)[:500] if soup else 'No item HTML'
+                self.stdout(f"Item {idx} - Item HTML: {item_html}")
+
+            if movie_data['title']:
+                title_pattern = r'^[a-zA-Z0-9\s\-\'\(\):,.!]+$'
+                self.stdout(f"Item {idx} - Validating title '{movie_data['title']}' with regex: {title_pattern}")
+                if not re.match(title_pattern, movie_data['title']):
+                    self.stdout(f"Item {idx} - Invalid title: {movie_data['title']}")
+                    return None
+                self.stdout(f"Item {idx} - Title validated successfully")
+                return movie_data
+            else:
+                self.stdout(f"Item {idx} - Skipped: No title found")
+                return None
+        except Exception as e:
+            logger.error(f"Error parsing item {idx}: {e}")
+            return None
+
     def parse_movie_data(self, html):
-        """Parsing to all the HTML pages stored and retrieving required details"""
+        """Parse all movie items from HTML in parallel."""
         if not html:
             self.stdout("No HTML content to parse")
             return []
@@ -156,125 +274,22 @@ class IMDbScraper:
             self.stdout(f"Found {len(movie_items)} movie items on page")
             
             movies = []
-            driver = self.setup_driver()
-            try:
-                for idx, item in enumerate(movie_items, 1):
-                    movie_data = {}
-                    try:
-                        title_tag = (
-                            item.select_one('a[class*="ipc-title-link"]') or
-                            item.select_one('h3 a') or
-                            item.select_one('a[href*="/title/tt"]')
-                        )
-                        movie_data['title'] = title_tag.text.strip() if title_tag else None
-                        self.stdout(f"Item {idx} - Title: {movie_data['title']}")
-                        title_href = title_tag.get('href') if title_tag else None
-                        self.stdout(f"Item {idx} - Title href: {title_href}")
-                        
-                        year_tag = item.select_one('span[class*="metadata-item"]') or item.select_one('span[class*="lister-item-year"]')
-                        if year_tag:
-                            year_text = year_tag.text.strip('()')
-                            movie_data['release_year'] = int(year_text) if year_text.isdigit() else None
-                        else:
-                            movie_data['release_year'] = None
-                        self.stdout(f"Item {idx} - Year: {movie_data['release_year']}")
-                        
-                        rating_tag = (
-                            item.select_one('span[aria-label*="IMDb rating"]') or
-                            item.select_one('span[class*="ipc-rating-star"]') or
-                            item.select_one('div[class*="ratings-imdb-rating"] strong') or
-                            item.select_one('div[data-testid*="rating"]')
-                        )
-                        rating_text = None
-                        if rating_tag:
-                            rating_text = (
-                                rating_tag.get('data-value') or
-                                rating_tag.get('aria-label', '').split()[-1] if rating_tag.get('aria-label') else
-                                rating_tag.text.strip()
-                            )
-                        try:
-                            movie_data['imdb_rating'] = float(rating_text) if rating_text and rating_text.replace('.', '', 1).isdigit() else None
-                            if movie_data['imdb_rating'] is not None and not (0 <= movie_data['imdb_rating'] <= 10):
-                                self.stdout(f"Item {idx} - Invalid rating: {movie_data['imdb_rating']}")
-                                movie_data['imdb_rating'] = None
-                            else:
-                                self.stdout(f"Item {idx} - Rating: {movie_data['imdb_rating']}")
-                        except ValueError:
-                            movie_data['imdb_rating'] = None
-                        if not movie_data['imdb_rating']:
-                            rating_div = item.select_one('div[class*="sc-"]') or item.select_one('div[class*="ratings-"]')
-                            rating_html = str(rating_div)[:200] if rating_div else 'No rating div'
-                            self.stdout(f"Item {idx} - Rating HTML: {rating_html}")
-
-                        plot_tags = item.select('div[class*="ipc-html-content-inner-div"]') or item.select('p[class*="text-muted"]')
-                        plot_tag = plot_tags[-1] if plot_tags else None
-                        movie_data['plot_summary'] = plot_tag.text.strip() if plot_tag else ""
-                        self.stdout(f"Item {idx} - Plot: {movie_data['plot_summary'][:50]}...")
-                        
-                        people_tag = (
-                            item.select_one('div[class*="metadata-list"]') or
-                            item.select_one('p:nth-of-type(3)') or
-                            item.select_one('div[class*="sc-"] div[class*="text-muted"]') or
-                            item.select_one('div[class*="sc-"]') or
-                            item.select_one('div[data-testid*="credits"]') or
-                            item.select_one('div[data-testid*="title-cast"]')
-                        )
-                        directors = []
-                        cast = []
-                        if people_tag:
-                            text = people_tag.text.strip()
-                            self.stdout(f"Item {idx} - People text: {text[:100]}...")
-                            director_links = (
-                                people_tag.find_all('a', href=lambda x: x and 'tt_ov_dr' in x) or
-                                item.select('a[href*="/name/"][href*="tt_ov_dr"]') or
-                                item.select('a[data-testid*="director"]') or
-                                item.select('div[data-testid*="title-cast"] a[href*="/name/"]')
-                            )
-                            directors = [link.text.strip() for link in director_links if link.text.strip()]
-                            cast_links = (
-                                people_tag.find_all('a', href=lambda x: x and 'tt_ov_st' in x) or
-                                item.select('a[href*="/name/"][href*="tt_ov_st"]') or
-                                item.select('a[data-testid*="cast"]') or
-                                item.select('div[data-testid*="title-cast"] a[href*="/name/"]')
-                            )
-                            cast = [link.text.strip() for link in cast_links if link.text.strip()]
-                        movie_data['directors'] = directors
-                        movie_data['cast'] = cast
-                        self.stdout(f"Item {idx} - Directors: {directors}")
-                        self.stdout(f"Item {idx} - Cast: {cast}")
-
-                        if not directors and not cast and title_tag and title_tag.get('href'):
-                            self.stdout(f"Item {idx} - Triggering movie page scrape due to empty directors/cast")
-                            movie_url = f"https://www.imdb.com{title_tag['href']}"
-                            directors, cast = self.scrape_movie_page(movie_url, driver) #as the directors and cast info is not present on main page we need to go into each movie
-                            movie_data['directors'] = directors
-                            movie_data['cast'] = cast
-
-                        if not directors and not cast:
-                            item_html = str(item)[:500] if item else 'No item HTML'
-                            self.stdout(f"Item {idx} - Item HTML: {item_html}")
-
-                        if movie_data['title']:
-                            title_pattern = r'^[a-zA-Z0-9\s\-\'\(\):,.!]+$'
-                            self.stdout(f"Item {idx} - Validating title '{movie_data['title']}' with regex: {title_pattern}")
-                            if not re.match(title_pattern, movie_data['title']):
-                                self.stdout(f"Item {idx} - Invalid title: {movie_data['title']}")
-                                continue
-                            self.stdout(f"Item {idx} - Title validated successfully")
-                            movies.append(movie_data)
-                        else:
-                            self.stdout(f"Item {idx} - Skipped: No title found")
-                    except Exception as e:
-                        logger.error(f"Error parsing item {idx}: {e}")
-                        continue
-            finally:
-                driver.quit()
+            processes = max(1, multiprocessing.cpu_count() - 1)
+            self.stdout(f"Parsing {len(movie_items)} movie items with {processes} processes")
+            with Pool(processes=processes) as pool:
+                results = pool.starmap(
+                    self.parse_movie_item,
+                    [(str(item), idx) for idx, item in enumerate(movie_items, 1)]
+                )
+            movies = [result for result in results if result is not None]
+            
             if movies:
                 self.stdout(f"First 5 titles: {[m['title'] for m in movies[:5]]}")
             return movies
         except Exception as e:
             logger.error(f"Error parsing HTML: {e}")
             return []
+    
 
     def save_to_db(self, movies):
         """Saving the scraped data to db in structured format"""
@@ -298,7 +313,7 @@ class IMDbScraper:
                             'plot_summary': movie_data['plot_summary'],
                             'directors': ','.join(movie_data['directors']) if movie_data['directors'] else '',
                             'cast': ','.join(movie_data['cast']) if movie_data['cast'] else '',
-                            'genre': self.genre
+                            'genre': self.genre or 'Unknown'
                         }
                     )
                     if created:
@@ -326,7 +341,8 @@ class IMDbScraper:
                 results = [self.get_page(page) for page in range(1, self.max_pages + 1)]
             else:
                 self.stdout("Running in multi-threaded mode")
-                with Pool(processes=4, initializer=django.setup) as pool:
+                processes = max(1, multiprocessing.cpu_count() - 1)
+                with Pool(processes=processes, initializer=django.setup) as pool:
                     results = pool.map(self.get_page, range(1, self.max_pages + 1))
             
             for page_num, html in enumerate(results, 1):
