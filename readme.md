@@ -20,6 +20,7 @@ The scraper supports pagination (50 results per page), genre/keyword filtering, 
   - **Error Handling/Logging**: Uses Python’s `logging` library, with logs in `scraper.log`.
   - **Unit Tests**: 25 tests (17 scraper, 3 serializer, 5 API) ensure robustness and independence using an in-memory database.
   - **Multiprocessing**: Parallel page fetching with `multiprocessing.Pool` for faster scraping.
+  - **Parallel Parsing with Duplicate Skipping**: Parses movie items in parallel using multiprocessing.Pool and skips duplicates (based on title and release year) early to optimize performance.
   - **Genre/Keyword Support**: Filter movies by genre (e.g., `comedy`) and keywords (e.g., `avengers`).
   - **Full-Text Search**: Search movies by keywords in `title`, `plot_summary`, `directors`, or `cast` (e.g., `?search=mini`).
 
@@ -87,6 +88,7 @@ python manage.py scrapemovies [options]
   ```
 
 The scraper stops if no more data is available and logs details to `scraper.log`.
+The scraper uses parallel processing to parse movie items and skips duplicates early, significantly reducing runtime when scraping pages with redundant movies. Check `scraper.log` for details on skipped duplicates and parsing performance.
 
 ## Running the Server
 
@@ -222,6 +224,7 @@ python manage.py test movies.tests
 - **Standards**: Adheres to PEP 8, with consistent naming and modular design.
 - **Error Handling**: Includes retries for network failures, transaction-based database saves, and detailed logging.
 - **Validation**: Enforces valid titles (alphanumeric, specific symbols) and IMDb ratings (0–10).
+- **Performance**: Uses parallel parsing and early duplicate skipping to reduce processing time for large datasets, especially when handling duplicate movies.
 
 ## Troubleshooting
 
