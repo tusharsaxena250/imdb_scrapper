@@ -79,11 +79,11 @@ python manage.py scrapemovies [options]
   ```
 - Scrape movies with keyword “avengers” (2 pages):
   ```bash
-  python manage.py scrapemovies --keywords=avengers --max-pages=2
+  python manage.py scrapemovies --keyword=avengers --max-pages=2
   ```
 - Scrape comedy movies with keyword “avengers”:
   ```bash
-  python manage.py scrapemovies --genre=comedy --keywords=avengers --max-pages=2
+  python manage.py scrapemovies --genre=comedy --keyword=avengers --max-pages=2
   ```
 
 The scraper stops if no more data is available and logs details to `scraper.log`.
