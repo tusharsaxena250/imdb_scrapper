@@ -192,30 +192,30 @@ python manage.py test movies.tests
   Full Structure
   
   imdb_scrapper
-  | - imdb_scapper
-      | - __init__.py
-      | - settings.py
-      | - urls.py
-  | - movies
-      | - managemnet
-          | - commands
-              | - scrapemovies.py
-      | - tests
-          | - __init__.py
-          | - test_api_filters.py
-          | - test_scraper.py
-          | - test_seqializers.py
-      | - __init__.py
-      | - app.py
-      | - models.py
-      | - scraper.py
-      | - serializers.py
-      | - urls.py
-      | - views.py
-  | - manage.py
-  | - readme.md
-  | - requirements.tx
-  | - scraper.log
+   - imdb_scapper
+      - __init__.py
+      - settings.py
+      - urls.py
+   - movies
+      - managemnet
+          - commands
+              - scrapemovies.py
+      - tests
+          - __init__.py
+          - test_api_filters.py
+          - test_scraper.py
+          - test_seqializers.py
+      - __init__.py
+      - app.py
+      - models.py
+      - scraper.py
+      - serializers.py
+      - urls.py
+      - views.py
+   - manage.py
+   - readme.md
+   - requirements.tx
+   - scraper.log
 
 ## Code Quality
 
