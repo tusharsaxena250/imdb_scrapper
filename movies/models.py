@@ -7,7 +7,7 @@ class Movie(models.Model):
     plot_summary = models.TextField(blank=True)
     directors = models.TextField(blank=True)  # Comma-separated director names
     cast = models.TextField(blank=True)      # Comma-separated actor names
-    genre = models.CharField(max_length=100, blank=True)
+    genre = models.CharField(max_length=100, blank=True, null=True)
 
     class Meta:
         unique_together = ['title', 'release_year']

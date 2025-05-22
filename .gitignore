@@ -3,4 +3,4 @@ db.sqlite3
 scraper.log
 scrape_env/
 .DS_Store
-movies/migration/
+movies/migrations/

@@ -53,7 +53,7 @@ The scraper supports pagination (50 results per page), genre/keyword filtering, 
 
 4. **Apply Database Migrations**:
    ```bash
-   python manage.py makemigrations
+   python manage.py makemigrations movies
    python manage.py migrate
    ```
    The project uses SQLite (`db.sqlite3`) for simplicity.
